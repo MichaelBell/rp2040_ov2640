@@ -13,7 +13,7 @@ struct ov2640_config {
 	uint pin_resetb;
 	uint pin_xclk;
 	uint pin_vsync;
-	// Y2, Y3, Y4, Y5, Y6, Y7, Y8, PCLK, HREF
+	// Y2, Y3, Y4, Y5, Y6, Y7, Y8, Y9, HREF, ..., PCLK (PCLK is 1, base is 10 => PCLK is 23 from base)
 	uint pin_y2_pio_base;
 
 	PIO pio;

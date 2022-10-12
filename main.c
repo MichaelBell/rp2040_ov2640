@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include "hardware/dma.h"
+#include "hardware/pio.h"
 #include "ov2640.h"
 
 #include "pico/cyw43_arch.h"
@@ -27,17 +29,15 @@ struct ov2640_config config;
 #define TEST_TCP_SERVER_IP "192.168.1.68"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
-#define BUF_SIZE 2048
-#define POLL_TIME_S 5
+#define BUF_SIZE 3072
 
 typedef struct TCP_CLIENT_T_ {
     struct tcp_pcb *tcp_pcb;
     ip_addr_t remote_addr;
-    uint8_t buffer[BUF_SIZE];
-    int buffer_len;
-    int sent_len;
+    int unack_len;
+    uint8_t* xfer_ptr;
+    uint8_t* xfer_end;
     bool complete;
-    int run_count;
     bool connected;
 } TCP_CLIENT_T;
 
@@ -76,13 +76,15 @@ static err_t tcp_result(void *arg, int status) {
 static err_t tcp_client_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     TCP_CLIENT_T *state = (TCP_CLIENT_T*)arg;
     DEBUG_printf("tcp_client_sent %u\n", len);
-    state->sent_len += len;
+    state->unack_len -= len;
 
-    if (state->sent_len >= 1024) {
+    int len_to_send = state->xfer_end - state->xfer_ptr;
+    printf("%d bytes left to send\n", len_to_send);
 
-        tcp_result(arg, 0);
-        return ERR_OK;
-    }
+    if (len_to_send > len) len_to_send = len;
+    state->unack_len = len_to_send;
+    state->xfer_ptr += len_to_send;
+    tcp_write(state->tcp_pcb, state->xfer_ptr, len_to_send, 0);
 
     return ERR_OK;
 }
@@ -125,11 +127,11 @@ err_t tcp_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err
         for (struct pbuf *q = p; q != NULL; q = q->next) {
             DUMP_BYTES(q->payload, q->len);
         }
-#endif
         // Receive the buffer
         const uint16_t buffer_left = BUF_SIZE - state->buffer_len;
         state->buffer_len += pbuf_copy_partial(p, state->buffer + state->buffer_len,
                                                p->tot_len > buffer_left ? buffer_left : p->tot_len, 0);
+#endif
         tcp_recved(tpcb, p->tot_len);
     }
     pbuf_free(p);
@@ -147,12 +149,12 @@ static bool tcp_client_open(void *arg) {
     }
 
     tcp_arg(state->tcp_pcb, state);
-    tcp_poll(state->tcp_pcb, tcp_client_poll, POLL_TIME_S * 2);
+    tcp_poll(state->tcp_pcb, tcp_client_poll, 2);
     tcp_sent(state->tcp_pcb, tcp_client_sent);
     tcp_recv(state->tcp_pcb, tcp_client_recv);
     tcp_err(state->tcp_pcb, tcp_client_err);
 
-    state->buffer_len = 0;
+    state->unack_len = 0;
 
     // cyw43_arch_lwip_begin/end should be used around calls into lwIP to ensure correct locking.
     // You can omit them if you are in a callback from lwIP. Note that when using pico_cyw_arch_poll
@@ -206,9 +208,9 @@ int main() {
 	config.pin_y2_pio_base = PIN_CAM_Y2_PIO_BASE;
 
 	config.pio = pio0;
-	config.pio_sm = 0;
+	config.pio_sm = 0; //pio_claim_unused_sm(pio0, true);
 
-	config.dma_channel = 0;
+	config.dma_channel = 0; //dma_claim_unused_channel(true);
 	config.image_buf = image_buf;
 	config.image_buf_size = sizeof(image_buf);
 
@@ -238,9 +240,26 @@ int main() {
 	printf("Frame captured\n");
 	cyw43_arch_poll();
 
+	cli->xfer_ptr = config.image_buf;
+	cli->xfer_end = cli->xfer_ptr + config.image_buf_size;
+	cli->unack_len = BUF_SIZE;
 	cyw43_arch_lwip_begin();
-	tcp_write(cli->tcp_pcb, config.image_buf, 1024, TCP_WRITE_FLAG_COPY);
+	tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
 	cyw43_arch_lwip_end();
+
+	while (cli->unack_len > 0) {
+		cyw43_arch_poll();
+		sleep_ms(1);
+	}	
+
+	if (cli->xfer_ptr != cli->xfer_end)
+	{
+		tcp_result(cli, 1);
+	}
+	else
+	{
+		tcp_result(cli, 0);
+	}
 
 	while (true)
 	{

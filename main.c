@@ -26,7 +26,7 @@ const uint8_t CMD_CAPTURE = 0xCC;
 uint8_t image_buf[352*288*2];
 struct ov2640_config config;
 
-#define TEST_TCP_SERVER_IP "192.168.1.68"
+#define TEST_TCP_SERVER_IP "192.168.1.248"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 3072
@@ -149,7 +149,7 @@ static bool tcp_client_open(void *arg) {
     }
 
     tcp_arg(state->tcp_pcb, state);
-    tcp_poll(state->tcp_pcb, tcp_client_poll, 2);
+    tcp_poll(state->tcp_pcb, tcp_client_poll, 4);
     tcp_sent(state->tcp_pcb, tcp_client_sent);
     tcp_recv(state->tcp_pcb, tcp_client_recv);
     tcp_err(state->tcp_pcb, tcp_client_err);
@@ -181,6 +181,8 @@ static TCP_CLIENT_T* tcp_client_init(void) {
 
 int main() {
 	stdio_init_all();
+
+	sleep_ms(500);
 
 	if (cyw43_arch_init_with_country(CYW43_COUNTRY_UK)) {
 		printf("failed to initialise\n");
@@ -226,14 +228,26 @@ int main() {
 	TCP_CLIENT_T* cli = tcp_client_init();
 	if (!cli) return 1;
 
-	if (!tcp_client_open(cli)) {
-		tcp_result(cli, -1);
-	}
+	while (!cli->connected) {
+		if (!tcp_client_open(cli)) {
+			tcp_result(cli, -1);
+		}
+		else {
+			for (int i = 0; i < 10000 &&(!cli->connected); ++i)
+			{
+				cyw43_arch_poll();
+				sleep_ms(1);
+			}
 
-	while (!cli->connected)
-	{
-		cyw43_arch_poll();
-		sleep_ms(1);
+			if (!cli->connected) {
+				tcp_result(cli, 2);
+			}
+		}
+		for (int i = 0; i < 1000; ++i)
+		{
+			cyw43_arch_poll();
+			sleep_ms(1);
+		}
 	}
 
 	ov2640_capture_frame(&config);

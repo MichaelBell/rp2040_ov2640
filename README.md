@@ -1,11 +1,13 @@
-# rp2040_ov2640
-Quick demonstration of interfacing with an OV2640 camera from the Raspberry Pi
-Pico (RP2040).
+# Pico W ov2640
+Captures an image from a OV2640 and sends over a wifi connection to a machine
+running the `image_read.py` script.
 
-Captures images in CIF resolution (352 by 288) and sends them to a computer over
-the UART. Images can be captured and the camera's registers read/written from a
-small IPython shell.
+Currently captures a single image in CIF resolution (352 by 288).
 
+To build, create a secrets.h with format:
 ```
-python shell.py [serial port]
+char wifi_ssid[] = "MySSID";
+char wifi_pass[] = "MyPassword";
 ```
+
+Then run the `image_read.py` script locally and load the firmware on to the Pico.

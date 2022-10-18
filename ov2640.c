@@ -63,6 +63,7 @@ void ov2640_capture_frame(struct ov2640_config *config) {
 	// Wait for vsync rising edge to start frame
 	while (gpio_get(config->pin_vsync) == true);
 	while (gpio_get(config->pin_vsync) == false);
+	pio_sm_clear_fifos(config->pio, config->pio_sm);
 
 	dma_channel_start(config->dma_channel);
 	dma_channel_wait_for_finish_blocking(config->dma_channel);

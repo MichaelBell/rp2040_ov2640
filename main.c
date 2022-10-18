@@ -31,7 +31,7 @@ struct ov2640_config config;
 #define TEST_TCP_SERVER_IP "192.168.1.248"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
-#define BUF_SIZE 3072
+#define BUF_SIZE 1400
 
 typedef struct TCP_CLIENT_T_ {
     struct tcp_pcb *tcp_pcb;
@@ -82,10 +82,15 @@ static err_t tcp_client_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     int len_to_send = state->xfer_end - state->xfer_ptr;
     printf("%d bytes left to send\n", len_to_send);
 
-    if (len_to_send > len) len_to_send = len;
-    state->unack_len = len_to_send;
-    state->xfer_ptr += len_to_send;
-    tcp_write(state->tcp_pcb, state->xfer_ptr, len_to_send, 0);
+    if (state->unack_len == 0) {
+        if (len_to_send > BUF_SIZE) {
+	    len_to_send = BUF_SIZE;
+        }
+        state->unack_len = len_to_send;
+        state->xfer_ptr += len_to_send;
+        tcp_write(state->tcp_pcb, state->xfer_ptr, len_to_send, 0);
+        tcp_output(state->tcp_pcb);
+    }
 
     return ERR_OK;
 }
@@ -269,6 +274,7 @@ void core1_entry() {
 		cli->unack_len = BUF_SIZE;
 		cyw43_arch_lwip_begin();
 		tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
+		tcp_output(cli->tcp_pcb);
 		cyw43_arch_lwip_end();
 
 		while (cli->unack_len > 0) {

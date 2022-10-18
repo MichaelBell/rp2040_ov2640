@@ -13,7 +13,7 @@ void image_program_init(PIO pio, uint sm, uint offset, uint pin_base) {
 
 	pio_sm_config c = image_program_get_default_config(offset);
 	sm_config_set_in_pins(&c, pin_base);
-	sm_config_set_in_shift(&c, false, true, 8);
+	sm_config_set_in_shift(&c, false, true, 32);
 	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
 	pio_sm_init(pio, sm, offset, &c);

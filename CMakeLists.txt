@@ -33,6 +33,7 @@ pico_generate_pio_header(${NAME} ${CMAKE_CURRENT_LIST_DIR}/image.pio)
 
 target_link_libraries(${NAME}
 	pico_stdlib
+	pico_multicore
 	hardware_dma
 	hardware_i2c
 	hardware_pio

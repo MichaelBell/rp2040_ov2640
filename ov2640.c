@@ -49,13 +49,14 @@ void ov2640_capture_frame(struct ov2640_config *config) {
 	channel_config_set_read_increment(&c, false);
 	channel_config_set_write_increment(&c, true);
 	channel_config_set_dreq(&c, pio_get_dreq(config->pio, config->pio_sm, false));
-	channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+	channel_config_set_bswap(&c, true);
 	
 	dma_channel_configure(
 		config->dma_channel, &c,
 		config->image_buf,
 		&config->pio->rxf[config->pio_sm],
-		config->image_buf_size,
+		config->image_buf_size / 4,
 		false
 	);
 

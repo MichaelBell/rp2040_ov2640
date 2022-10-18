@@ -2,3 +2,5 @@ build/
 *.swp
 
 secrets.h
+
+scripts/image*

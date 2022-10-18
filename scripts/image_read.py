@@ -10,20 +10,23 @@ def make_image(raw):
     width, height = img.size
     data = img.load()
 
-    for y in range(height):
-        for x in range(width):
-            idx = y * width + x
-            v = struct.unpack('<H', raw[2*idx:2*(idx+1)])[0]
+    try:
+        for y in range(height):
+            for x in range(width):
+                idx = y * width + x
+                v = struct.unpack('>H', raw[2*idx:2*(idx+1)])[0]
 
-            r, g, b = v >> (5 + 6), (v >> 5) & 0b111111, v & 0b11111 
+                r, g, b = v >> (5 + 6), (v >> 5) & 0b111111, v & 0b11111 
 
-            r = math.floor(r / 0x1f * 0xff)
-            g = math.floor(g / 0x3f * 0xff)
-            b = math.floor(b / 0x1f * 0xff)
-            data[x, y] = (r, g, b)
+                r = math.floor(r / 0x1f * 0xff)
+                g = math.floor(g / 0x3f * 0xff)
+                b = math.floor(b / 0x1f * 0xff)
+                data[x, y] = (r, g, b)
+    except struct.error:
+        print("Incomplete image")
 
     global image_count
-    img.save("image{}.bmp".format(image_count))
+    img.save("image{}.png".format(image_count))
     image_count += 1
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
@@ -44,11 +47,15 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
         while True:
             self.data = self.request.recv(1024)
             if len(self.data) == 0: break
-            print("{} wrote {} bytes".format(self.client_address[0], len(self.data)))
+            #print("{} wrote {} bytes".format(self.client_address[0], len(self.data)))
             self.image_data += self.data
-            self.request.send(b"OK")
+            try:
+                self.request.send(b"OK")
+            except ConnectionAbortedError:
+                pass
             
     def finish(self):
+        print("Writing image {}".format(image_count))
         make_image(self.image_data)
 
 if __name__ == "__main__":

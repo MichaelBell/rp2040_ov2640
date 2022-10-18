@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
+#include "pico/multicore.h"
 #include "ov2640.h"
 
 #include "pico/cyw43_arch.h"
@@ -11,6 +12,7 @@
 #include "lwip/tcp.h"
 
 const int PIN_LED = 6;
+const int PIN_POKE = 7;
 
 const int PIN_CAM_SIOC = 5; // I2C0 SCL
 const int PIN_CAM_SIOD = 4; // I2C0 SDA
@@ -23,7 +25,7 @@ const uint8_t CMD_REG_WRITE = 0xAA;
 const uint8_t CMD_REG_READ = 0xBB;
 const uint8_t CMD_CAPTURE = 0xCC;
 
-uint8_t image_buf[352*288*2];
+_Alignas(4) uint8_t image_buf[352*288*2];
 struct ov2640_config config;
 
 #define TEST_TCP_SERVER_IP "192.168.1.248"
@@ -37,7 +39,6 @@ typedef struct TCP_CLIENT_T_ {
     int unack_len;
     uint8_t* xfer_ptr;
     uint8_t* xfer_end;
-    bool complete;
     bool connected;
 } TCP_CLIENT_T;
 
@@ -57,6 +58,7 @@ static err_t tcp_client_close(void *arg) {
             err = ERR_ABRT;
         }
         state->tcp_pcb = NULL;
+	state->connected = false;
     }
     return err;
 }
@@ -69,7 +71,6 @@ static err_t tcp_result(void *arg, int status) {
     } else {
         DEBUG_printf("test failed %d\n", status);
     }
-    state->complete = true;
     return tcp_client_close(arg);
 }
 
@@ -178,27 +179,35 @@ static TCP_CLIENT_T* tcp_client_init(void) {
     return state;
 }	
 
+void core1_entry();
 
 int main() {
 	stdio_init_all();
 
-	sleep_ms(500);
+	multicore_launch_core1(core1_entry);
 
+	while (true) __wfe();
+}
+
+void core1_entry() {
 	if (cyw43_arch_init_with_country(CYW43_COUNTRY_UK)) {
 		printf("failed to initialise\n");
-		return 1;
+		return;
 	}
 
 	cyw43_arch_enable_sta_mode();
 
 	if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
 		printf("failed to connect\n");
-		return 1;
+		return;
 	}
 	printf("\n\nConnected!\n");
 
 	gpio_init(PIN_LED);
 	gpio_set_dir(PIN_LED, GPIO_OUT);
+	gpio_init(PIN_POKE);
+	gpio_pull_down(PIN_POKE);
+	gpio_set_dir(PIN_POKE, GPIO_IN);
 
 	config.sccb = i2c0;
 	config.pin_sioc = PIN_CAM_SIOC;
@@ -226,88 +235,62 @@ int main() {
 	cyw43_arch_poll();
 
 	TCP_CLIENT_T* cli = tcp_client_init();
-	if (!cli) return 1;
+	if (!cli) return;
 
-	while (!cli->connected) {
-		if (!tcp_client_open(cli)) {
-			tcp_result(cli, -1);
-		}
-		else {
-			for (int i = 0; i < 10000 &&(!cli->connected); ++i)
+	while (true) {
+		while (!cli->connected) {
+			if (!tcp_client_open(cli)) {
+				tcp_result(cli, -1);
+			}
+			else {
+				for (int i = 0; i < 10000 &&(!cli->connected); ++i)
+				{
+					cyw43_arch_poll();
+					sleep_ms(1);
+				}
+
+				if (!cli->connected) {
+					tcp_result(cli, 2);
+				}
+			}
+			for (int i = 0; i < 1000; ++i)
 			{
 				cyw43_arch_poll();
 				sleep_ms(1);
 			}
-
-			if (!cli->connected) {
-				tcp_result(cli, 2);
-			}
 		}
-		for (int i = 0; i < 1000; ++i)
+
+		ov2640_capture_frame(&config);
+		printf("Frame captured\n");
+		cyw43_arch_poll();
+
+		cli->xfer_ptr = config.image_buf;
+		cli->xfer_end = cli->xfer_ptr + config.image_buf_size;
+		cli->unack_len = BUF_SIZE;
+		cyw43_arch_lwip_begin();
+		tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
+		cyw43_arch_lwip_end();
+
+		while (cli->unack_len > 0) {
+			cyw43_arch_poll();
+			sleep_ms(1);
+		}	
+
+		if (cli->xfer_ptr != cli->xfer_end)
+		{
+			tcp_result(cli, 1);
+		}
+		else
+		{
+			tcp_result(cli, 0);
+		}
+
+		while (!gpio_get(PIN_POKE))
 		{
 			cyw43_arch_poll();
 			sleep_ms(1);
 		}
+
+		sleep_ms(500);
 	}
-
-	ov2640_capture_frame(&config);
-	printf("Frame captured\n");
-	cyw43_arch_poll();
-
-	cli->xfer_ptr = config.image_buf;
-	cli->xfer_end = cli->xfer_ptr + config.image_buf_size;
-	cli->unack_len = BUF_SIZE;
-	cyw43_arch_lwip_begin();
-	tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
-	cyw43_arch_lwip_end();
-
-	while (cli->unack_len > 0) {
-		cyw43_arch_poll();
-		sleep_ms(1);
-	}	
-
-	if (cli->xfer_ptr != cli->xfer_end)
-	{
-		tcp_result(cli, 1);
-	}
-	else
-	{
-		tcp_result(cli, 0);
-	}
-
-	while (true)
-	{
-		cyw43_arch_poll();
-		sleep_ms(1);
-	}
-
-	
-	{
-		uint8_t cmd;
-		uart_read_blocking(uart0, &cmd, 1);
-
-		gpio_put(PIN_LED, !gpio_get(PIN_LED));
-		
-		if (cmd == CMD_REG_WRITE) {
-			uint8_t reg;
-			uart_read_blocking(uart0, &reg, 1);
-
-			uint8_t value;
-			uart_read_blocking(uart0, &value, 1);
-
-			ov2640_reg_write(&config, reg, value);
-		} else if (cmd == CMD_REG_READ) {
-			uint8_t reg;
-			uart_read_blocking(uart0, &reg, 1);
-
-			uint8_t value = ov2640_reg_read(&config, reg);
-
-			uart_write_blocking(uart0, &value, 1);
-		} else if (cmd == CMD_CAPTURE) {
-			ov2640_capture_frame(&config);
-			uart_write_blocking(uart0, config.image_buf, config.image_buf_size);
-		}
-	}
-
-	return 0;
 }

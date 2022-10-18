@@ -11,3 +11,5 @@ char wifi_pass[] = "MyPassword";
 ```
 
 Then run the `image_read.py` script locally and load the firmware on to the Pico.
+
+The Pico will upload one image after booting and connecting, and more images can be taken by pressing a button.

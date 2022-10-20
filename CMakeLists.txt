@@ -20,6 +20,7 @@ pico_sdk_init()
 
 add_executable(${NAME}
 	ov2640.c
+	aps6404.c
 	main.c
 )
 
@@ -30,6 +31,7 @@ pico_enable_stdio_uart(${NAME} 0)
 pico_enable_stdio_usb(${NAME} 1)
 
 pico_generate_pio_header(${NAME} ${CMAKE_CURRENT_LIST_DIR}/image.pio)
+pico_generate_pio_header(${NAME} ${CMAKE_CURRENT_LIST_DIR}/aps6404.pio)
 
 target_link_libraries(${NAME}
 	pico_stdlib

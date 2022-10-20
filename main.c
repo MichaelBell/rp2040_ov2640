@@ -4,6 +4,7 @@
 #include "hardware/pio.h"
 #include "pico/multicore.h"
 #include "ov2640.h"
+#include "aps6404.h"
 
 #include "pico/cyw43_arch.h"
 #include "secrets.h"
@@ -26,7 +27,8 @@ const uint8_t CMD_REG_READ = 0xBB;
 const uint8_t CMD_CAPTURE = 0xCC;
 
 _Alignas(4) uint8_t image_buf[352*288*2];
-struct ov2640_config config;
+struct ov2640_config ov_config;
+struct aps6404_config ram_config;
 
 #define TEST_TCP_SERVER_IP "192.168.1.248"
 #define TCP_PORT 4242
@@ -214,28 +216,56 @@ void core1_entry() {
 	gpio_pull_down(PIN_POKE);
 	gpio_set_dir(PIN_POKE, GPIO_IN);
 
-	config.sccb = i2c0;
-	config.pin_sioc = PIN_CAM_SIOC;
-	config.pin_siod = PIN_CAM_SIOD;
+	ov_config.sccb = i2c0;
+	ov_config.pin_sioc = PIN_CAM_SIOC;
+	ov_config.pin_siod = PIN_CAM_SIOD;
 
-	config.pin_resetb = PIN_CAM_RESETB;
-	config.pin_xclk = PIN_CAM_XCLK;
-	config.pin_vsync = PIN_CAM_VSYNC;
-	config.pin_y2_pio_base = PIN_CAM_Y2_PIO_BASE;
+	ov_config.pin_resetb = PIN_CAM_RESETB;
+	ov_config.pin_xclk = PIN_CAM_XCLK;
+	ov_config.pin_vsync = PIN_CAM_VSYNC;
+	ov_config.pin_y2_pio_base = PIN_CAM_Y2_PIO_BASE;
 
-	config.pio = pio0;
-	config.pio_sm = 0; //pio_claim_unused_sm(pio0, true);
+	ov_config.pio = pio0;
+	ov_config.pio_sm = pio_claim_unused_sm(pio0, true);
 
-	config.dma_channel = 0; //dma_claim_unused_channel(true);
-	config.image_buf = image_buf;
-	config.image_buf_size = sizeof(image_buf);
+	ov_config.dma_channel = dma_claim_unused_channel(true);
+	ov_config.image_buf = image_buf;
+	ov_config.image_buf_size = sizeof(image_buf);
 
-	ov2640_init(&config);
+	ov2640_init(&ov_config);
 
-	ov2640_reg_write(&config, 0xff, 0x01);
-	uint8_t midh = ov2640_reg_read(&config, 0x1C);
-	uint8_t midl = ov2640_reg_read(&config, 0x1D);
+	ov2640_reg_write(&ov_config, 0xff, 0x01);
+	uint8_t midh = ov2640_reg_read(&ov_config, 0x1C);
+	uint8_t midl = ov2640_reg_read(&ov_config, 0x1D);
 	printf("MIDH = 0x%02x, MIDL = 0x%02x\n", midh, midl);
+
+	ram_config.pin_csn = 20;
+	ram_config.pin_mosi = 22;
+	ram_config.pin_miso = 26;
+
+	ram_config.pio = pio0;
+	ram_config.pio_sm = pio_claim_unused_sm(pio0, true);
+
+	ram_config.dma_channel = dma_claim_unused_channel(true);
+
+	uint logic_sm = pio_claim_unused_sm(pio1, true);
+	uint logic_dma_channel = dma_claim_unused_channel(true);
+
+	aps6404_init(&ram_config);
+
+	uint32_t data[16];
+	for (int i = 0; i < 16; ++i) {
+		data[i] = 0x12345670 + i;
+	}
+	aps6404_write(&ram_config, 0, data, 16);
+
+	for (int i = 0; i < 16; ++i) {
+		uint32_t read_data = 1;
+		aps6404_read(&ram_config, i * 4, &read_data, 1);
+		if (read_data != data[i]) {
+			printf("RAM test failed: Wrote %x, read back %x\n", data[i], read_data);
+		}
+	}
 
 	cyw43_arch_poll();
 
@@ -243,6 +273,14 @@ void core1_entry() {
 	if (!cli) return;
 
 	while (true) {
+		while (!gpio_get(PIN_POKE))
+		{
+			cyw43_arch_poll();
+			sleep_ms(1);
+		}
+
+		sleep_ms(500);
+
 		while (!cli->connected) {
 			if (!tcp_client_open(cli)) {
 				tcp_result(cli, -1);
@@ -265,12 +303,12 @@ void core1_entry() {
 			}
 		}
 
-		ov2640_capture_frame(&config);
+		ov2640_capture_frame(&ov_config);
 		printf("Frame captured\n");
 		cyw43_arch_poll();
 
-		cli->xfer_ptr = config.image_buf;
-		cli->xfer_end = cli->xfer_ptr + config.image_buf_size;
+		cli->xfer_ptr = ov_config.image_buf;
+		cli->xfer_end = cli->xfer_ptr + ov_config.image_buf_size;
 		cli->unack_len = BUF_SIZE;
 		cyw43_arch_lwip_begin();
 		tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
@@ -291,12 +329,5 @@ void core1_entry() {
 			tcp_result(cli, 0);
 		}
 
-		while (!gpio_get(PIN_POKE))
-		{
-			cyw43_arch_poll();
-			sleep_ms(1);
-		}
-
-		sleep_ms(500);
 	}
 }

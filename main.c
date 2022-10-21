@@ -264,6 +264,7 @@ void core1_entry() {
 
 	gpio_init(PIN_LED);
 	gpio_set_dir(PIN_LED, GPIO_OUT);
+	gpio_put(PIN_LED, 1);
 	gpio_init(PIN_POKE);
 	gpio_pull_down(PIN_POKE);
 	gpio_set_dir(PIN_POKE, GPIO_IN);
@@ -282,7 +283,8 @@ void core1_entry() {
 
 	ov_config.dma_channel = dma_claim_unused_channel(true);
 	ov_config.image_buf = image_buf;
-	ov_config.image_buf_size = 352*288*2;
+	//ov_config.image_buf_size = 352*288*2;
+	ov_config.image_buf_size = 800*600*2;
 
 	ov2640_init(&ov_config);
 
@@ -331,7 +333,7 @@ void core1_entry() {
 			sleep_ms(1);
 		}
 
-		sleep_ms(500);
+		sleep_ms(1000);
 
 		while (!cli->connected) {
 			if (!tcp_client_open(cli)) {

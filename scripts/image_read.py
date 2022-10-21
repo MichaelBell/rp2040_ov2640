@@ -6,7 +6,7 @@ import math
 image_count = 0
 
 def make_image(raw):
-    img = Image.new('RGB', (352,288))
+    img = Image.new('RGB', (800,600))
     width, height = img.size
     data = img.load()
 

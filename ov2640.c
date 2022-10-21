@@ -11,9 +11,9 @@ void ov2640_init(struct ov2640_config *config) {
 	// XCLK generation (~20.83 MHz)
 	gpio_set_function(config->pin_xclk, GPIO_FUNC_PWM);
 	uint slice_num = pwm_gpio_to_slice_num(config->pin_xclk);
-	// 6 cycles (0 to 5), 125 MHz / 6 = ~20.83 MHz wrap rate
-	pwm_set_wrap(slice_num, 5);
-	pwm_set_gpio_level(config->pin_xclk, 3);
+	// 12 cycles (0 to 11), 125 MHz / 12 = ~10.42 MHz wrap rate
+	pwm_set_wrap(slice_num, 11);
+	pwm_set_gpio_level(config->pin_xclk, 6);
 	pwm_set_enabled(slice_num, true);
 
 	// SCCB I2C @ 100 kHz
@@ -32,8 +32,8 @@ void ov2640_init(struct ov2640_config *config) {
 	sleep_ms(100);
 
 	// Initialise the camera itself over SCCB
-	ov2640_regs_write(config, ov2640_vga);
-	ov2640_regs_write(config, ov2640_uxga_cif);
+	ov2640_regs_write(config, ov2640_svga);
+	//ov2640_regs_write(config, ov2640_uxga_cif);
 
 	// Set RGB565 output mode
 	ov2640_reg_write(config, 0xff, 0x00);

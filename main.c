@@ -26,21 +26,24 @@ const uint8_t CMD_REG_WRITE = 0xAA;
 const uint8_t CMD_REG_READ = 0xBB;
 const uint8_t CMD_CAPTURE = 0xCC;
 
-_Alignas(4) uint8_t image_buf[352*288*2];
+const int IMG_BUF_SIZE = 4096;
+_Alignas(4096) uint8_t image_buf[4096];
+//_Alignas(4) uint8_t image_buf[352*288*2];
+
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
 #define TEST_TCP_SERVER_IP "192.168.1.248"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
-#define BUF_SIZE 1400
+#define BUF_SIZE 1024
 
 typedef struct TCP_CLIENT_T_ {
     struct tcp_pcb *tcp_pcb;
     ip_addr_t remote_addr;
     int unack_len;
     uint8_t* xfer_ptr;
-    uint8_t* xfer_end;
+    int xfer_count;
     bool connected;
 } TCP_CLIENT_T;
 
@@ -81,18 +84,7 @@ static err_t tcp_client_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     DEBUG_printf("tcp_client_sent %u\n", len);
     state->unack_len -= len;
 
-    int len_to_send = state->xfer_end - state->xfer_ptr;
-    printf("%d bytes left to send\n", len_to_send);
-
-    if (state->unack_len == 0) {
-        if (len_to_send > BUF_SIZE) {
-	    len_to_send = BUF_SIZE;
-        }
-        state->unack_len = len_to_send;
-        state->xfer_ptr += len_to_send;
-        tcp_write(state->tcp_pcb, state->xfer_ptr, len_to_send, 0);
-        tcp_output(state->tcp_pcb);
-    }
+    printf("%d bytes left to send\n", state->xfer_count);
 
     return ERR_OK;
 }
@@ -186,6 +178,66 @@ static TCP_CLIENT_T* tcp_client_init(void) {
     return state;
 }	
 
+void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_config* ram_config) {
+        dma_channel_config c = dma_channel_get_default_config(ov_config->dma_channel);
+        channel_config_set_read_increment(&c, false);
+        channel_config_set_write_increment(&c, true);
+        channel_config_set_dreq(&c, pio_get_dreq(ov_config->pio, ov_config->pio_sm, false));
+        channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+        channel_config_set_bswap(&c, true);
+	channel_config_set_ring(&c, true, 12);  // Ring of 4096 bytes
+
+        dma_channel_configure(
+                ov_config->dma_channel, &c,
+                ov_config->image_buf,
+                &ov_config->pio->rxf[ov_config->pio_sm],
+                ov_config->image_buf_size / 4,
+                false
+        );
+
+	const int bytes_per_transfer = 1024;
+
+	c = dma_channel_get_default_config(ram_config->dma_channel);
+        channel_config_set_read_increment(&c, true);
+        channel_config_set_write_increment(&c, false);
+        channel_config_set_dreq(&c, pio_get_dreq(ram_config->pio, ram_config->pio_sm, true));
+        channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+	channel_config_set_ring(&c, false, 12);  // Ring of 4096 bytes
+
+        dma_channel_configure(
+                ram_config->dma_channel, &c,
+                &ram_config->pio->txf[ram_config->pio_sm],
+                ov_config->image_buf,
+                bytes_per_transfer / 4,
+                false
+        );
+
+	int next_transfer_threshold = (ov_config->image_buf_size - bytes_per_transfer) / 4;
+
+        // Wait for vsync rising edge to start frame
+        while (gpio_get(ov_config->pin_vsync) == true);
+        while (gpio_get(ov_config->pin_vsync) == false);
+        pio_sm_clear_fifos(ov_config->pio, ov_config->pio_sm);
+
+        dma_channel_start(ov_config->dma_channel);
+
+	uint32_t write_cmd_and_addr = 0x02000000u;
+	while (true) {
+		while (dma_hw->ch[ov_config->dma_channel].transfer_count > next_transfer_threshold);
+
+		pio_sm_put_blocking(ram_config->pio, ram_config->pio_sm, 0x8000201fu);
+		pio_sm_put_blocking(ram_config->pio, ram_config->pio_sm, write_cmd_and_addr);
+		dma_channel_start(ram_config->dma_channel);
+		write_cmd_and_addr += bytes_per_transfer;
+		dma_channel_wait_for_finish_blocking(ram_config->dma_channel);
+
+		if (next_transfer_threshold == 0) break;
+		else next_transfer_threshold -= bytes_per_transfer / 4;
+
+		if (next_transfer_threshold < 0) next_transfer_threshold = 0;
+	}
+}
+
 void core1_entry();
 
 int main() {
@@ -230,7 +282,7 @@ void core1_entry() {
 
 	ov_config.dma_channel = dma_claim_unused_channel(true);
 	ov_config.image_buf = image_buf;
-	ov_config.image_buf_size = sizeof(image_buf);
+	ov_config.image_buf_size = 352*288*2;
 
 	ov2640_init(&ov_config);
 
@@ -303,31 +355,43 @@ void core1_entry() {
 			}
 		}
 
-		ov2640_capture_frame(&ov_config);
+		capture_frame_to_sram(&ov_config, &ram_config);
 		printf("Frame captured\n");
 		cyw43_arch_poll();
 
+		uint32_t addr = 0;
+		aps6404_read(&ram_config, addr, (uint32_t*)ov_config.image_buf, BUF_SIZE / 4);
+		addr += BUF_SIZE;
+
 		cli->xfer_ptr = ov_config.image_buf;
-		cli->xfer_end = cli->xfer_ptr + ov_config.image_buf_size;
+		cli->xfer_count = ov_config.image_buf_size - BUF_SIZE;
 		cli->unack_len = BUF_SIZE;
 		cyw43_arch_lwip_begin();
 		tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
 		tcp_output(cli->tcp_pcb);
 		cyw43_arch_lwip_end();
 
-		while (cli->unack_len > 0) {
+		while (cli->xfer_count > 0) {
 			cyw43_arch_poll();
 			sleep_ms(1);
-		}	
+			if (cli->unack_len == 0) {
+				int len_to_send = cli->xfer_count;
+				if (len_to_send > BUF_SIZE) {
+				    len_to_send = BUF_SIZE;
+				}
 
-		if (cli->xfer_ptr != cli->xfer_end)
-		{
-			tcp_result(cli, 1);
-		}
-		else
-		{
-			tcp_result(cli, 0);
+				aps6404_read(&ram_config, addr, (uint32_t*)ov_config.image_buf, len_to_send / 4);
+				addr += len_to_send;
+
+				cli->unack_len = len_to_send;
+				cli->xfer_count -= len_to_send;
+				cyw43_arch_lwip_begin();
+				tcp_write(cli->tcp_pcb, cli->xfer_ptr, len_to_send, 0);
+				tcp_output(cli->tcp_pcb);
+				cyw43_arch_lwip_end();
+			}
 		}
 
+		tcp_result(cli, 0);
 	}
 }

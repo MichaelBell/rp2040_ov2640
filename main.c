@@ -12,6 +12,7 @@
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
 
+const int PIN_VSYS_EN = 2;
 const int PIN_LED = 6;
 const int PIN_POKE = 7;
 
@@ -33,7 +34,7 @@ _Alignas(4096) uint8_t image_buf[4096];
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
-#define TEST_TCP_SERVER_IP "192.168.1.248"
+#define TEST_TCP_SERVER_IP "192.168.0.136"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 1024
@@ -241,6 +242,10 @@ void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_confi
 void core1_entry();
 
 int main() {
+	gpio_init(PIN_VSYS_EN);
+	gpio_set_dir(PIN_VSYS_EN, GPIO_OUT);
+	gpio_put(PIN_VSYS_EN, 1);
+
 	stdio_init_all();
 
 	multicore_launch_core1(core1_entry);

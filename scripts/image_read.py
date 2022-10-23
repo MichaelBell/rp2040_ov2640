@@ -5,7 +5,7 @@ import math
 
 image_count = 0
 
-def make_image(raw):
+def make_image_rgb565(raw):
     img = Image.new('RGB', (800,600))
     width, height = img.size
     data = img.load()
@@ -27,6 +27,29 @@ def make_image(raw):
 
     global image_count
     img.save("image{}.png".format(image_count))
+    image_count += 1
+
+def make_image_yuv(raw):
+    img = Image.new('YCbCr', (800,600))
+    width, height = img.size
+    data = img.load()
+
+    try:
+        for y in range(height):
+            for x in range(width//2):
+                idx = y * width//2 + x
+                y0 = raw[4*idx]
+                u = raw[4*idx + 1]
+                y1 = raw[4*idx + 2]
+                v = raw[4*idx + 3]
+
+                data[x*2, y] = (y0, u, v)
+                data[x*2+1, y] = (y1, u, v)
+    except IndexError:
+        print("Incomplete image")
+
+    global image_count
+    img.convert('RGB').save("image{}.png".format(image_count))
     image_count += 1
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
@@ -56,7 +79,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             
     def finish(self):
         print("Writing image {}".format(image_count))
-        make_image(self.image_data)
+        make_image_yuv(self.image_data)
 
 if __name__ == "__main__":
     HOST, PORT = "0.0.0.0", 4242

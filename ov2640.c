@@ -35,10 +35,6 @@ void ov2640_init(struct ov2640_config *config) {
 	ov2640_regs_write(config, ov2640_svga);
 	//ov2640_regs_write(config, ov2640_uxga_cif);
 
-	// Set RGB565 output mode
-	ov2640_reg_write(config, 0xff, 0x00);
-	ov2640_reg_write(config, 0xDA, (ov2640_reg_read(config, 0xDA) & 0xC) | 0x8);
-
 	// Enable image RX PIO
 	uint offset = pio_add_program(config->pio, &image_program);
 	image_program_init(config->pio, config->pio_sm, offset, config->pin_y2_pio_base);

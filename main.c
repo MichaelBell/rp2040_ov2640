@@ -27,14 +27,13 @@ const uint8_t CMD_REG_WRITE = 0xAA;
 const uint8_t CMD_REG_READ = 0xBB;
 const uint8_t CMD_CAPTURE = 0xCC;
 
-const int IMG_BUF_SIZE = 4096;
-_Alignas(4096) uint8_t image_buf[4096];
+_Alignas(4096) uint8_t image_buf[8192];
 //_Alignas(4) uint8_t image_buf[352*288*2];
 
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
-#define TEST_TCP_SERVER_IP "192.168.0.136"
+#define TEST_TCP_SERVER_IP "192.168.0.88"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 1024
@@ -82,10 +81,10 @@ static err_t tcp_result(void *arg, int status) {
 
 static err_t tcp_client_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     TCP_CLIENT_T *state = (TCP_CLIENT_T*)arg;
-    DEBUG_printf("tcp_client_sent %u\n", len);
+    DEBUG_printf("tcp_client_sent %u, ", len);
     state->unack_len -= len;
 
-    printf("%d bytes left to send\n", state->xfer_count);
+    printf("%d bytes left to send, unack len %d\n", state->xfer_count, state->unack_len);
 
     return ERR_OK;
 }
@@ -123,7 +122,7 @@ err_t tcp_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err
     // cyw43_arch_lwip_begin IS needed
     cyw43_arch_lwip_check();
     if (p->tot_len > 0) {
-        DEBUG_printf("recv %d err %d\n", p->tot_len, err);
+        //DEBUG_printf("recv %d err %d\n", p->tot_len, err);
 #if 0
         for (struct pbuf *q = p; q != NULL; q = q->next) {
             DUMP_BYTES(q->payload, q->len);
@@ -261,9 +260,9 @@ void core1_entry() {
 
 	cyw43_arch_enable_sta_mode();
 
-	if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
+	while (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
 		printf("failed to connect\n");
-		return;
+		sleep_ms(1000);
 	}
 	printf("\n\nConnected!\n");
 
@@ -320,7 +319,7 @@ void core1_entry() {
 
 	for (int i = 0; i < 16; ++i) {
 		uint32_t read_data = 1;
-		aps6404_read(&ram_config, i * 4, &read_data, 1);
+		aps6404_read_blocking(&ram_config, i * 4, &read_data, 1);
 		if (read_data != data[i]) {
 			printf("RAM test failed: Wrote %x, read back %x\n", data[i], read_data);
 		}
@@ -338,7 +337,11 @@ void core1_entry() {
 			sleep_ms(1);
 		}
 
-		sleep_ms(1000);
+		for (int i = 0; i < 1000; ++i)
+		{
+			cyw43_arch_poll();
+			sleep_ms(1);
+		}
 
 		while (!cli->connected) {
 			if (!tcp_client_open(cli)) {
@@ -367,36 +370,49 @@ void core1_entry() {
 		cyw43_arch_poll();
 
 		uint32_t addr = 0;
+		int len_to_send = BUF_SIZE;
 		aps6404_read(&ram_config, addr, (uint32_t*)ov_config.image_buf, BUF_SIZE / 4);
 		addr += BUF_SIZE;
 
 		cli->xfer_ptr = ov_config.image_buf;
-		cli->xfer_count = ov_config.image_buf_size - BUF_SIZE;
-		cli->unack_len = BUF_SIZE;
-		cyw43_arch_lwip_begin();
-		tcp_write(cli->tcp_pcb, cli->xfer_ptr, BUF_SIZE, 0);
-		tcp_output(cli->tcp_pcb);
-		cyw43_arch_lwip_end();
+		cli->xfer_count = ov_config.image_buf_size;
+		cli->unack_len = 0;
 
 		while (cli->xfer_count > 0) {
 			cyw43_arch_poll();
-			sleep_ms(1);
-			if (cli->unack_len == 0) {
-				int len_to_send = cli->xfer_count;
+			if (cli->unack_len == 0 ||
+			    (cli->unack_len <= BUF_SIZE * 6 && !dma_channel_is_busy(ram_config.dma_channel)))
+			{
+				dma_channel_wait_for_finish_blocking(ram_config.dma_channel);
+
+				cli->unack_len += len_to_send;
+				cli->xfer_count -= len_to_send;
+				cyw43_arch_lwip_begin();
+				tcp_write(cli->tcp_pcb, cli->xfer_ptr, len_to_send, 0);
+				cyw43_arch_lwip_end();
+				cli->xfer_ptr += BUF_SIZE;
+				if (cli->xfer_ptr == ov_config.image_buf + BUF_SIZE * 8) {
+					cli->xfer_ptr = ov_config.image_buf;
+				}
+
+				len_to_send = cli->xfer_count;
 				if (len_to_send > BUF_SIZE) {
 				    len_to_send = BUF_SIZE;
 				}
 
-				aps6404_read(&ram_config, addr, (uint32_t*)ov_config.image_buf, len_to_send / 4);
-				addr += len_to_send;
-
-				cli->unack_len = len_to_send;
-				cli->xfer_count -= len_to_send;
-				cyw43_arch_lwip_begin();
-				tcp_write(cli->tcp_pcb, cli->xfer_ptr, len_to_send, 0);
-				tcp_output(cli->tcp_pcb);
-				cyw43_arch_lwip_end();
+				if (len_to_send > 0) {
+					aps6404_read(&ram_config, addr, (uint32_t*)cli->xfer_ptr, len_to_send / 4);
+					addr += len_to_send;
+				}
 			}
+			else {
+				sleep_us(100);
+			}
+		}
+
+		while (cli->unack_len > 0) {
+			sleep_ms(1);
+			cyw43_arch_poll();
 		}
 
 		tcp_result(cli, 0);

@@ -68,5 +68,10 @@ void aps6404_read(struct aps6404_config* config, uint32_t addr, uint32_t* read_b
 	pio_sm_put_blocking(config->pio, config->pio_sm, (len_in_words * 32) - 1);
 	pio_sm_put_blocking(config->pio, config->pio_sm, 0x0b000000u | addr);
 
+}
+
+void aps6404_read_blocking(struct aps6404_config* config, uint32_t addr, uint32_t* read_buf, uint32_t len_in_words) {
+	aps6404_read(config, addr, read_buf, len_in_words);
+
 	dma_channel_wait_for_finish_blocking(config->dma_channel);
 }

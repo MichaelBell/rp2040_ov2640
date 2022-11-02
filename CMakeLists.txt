@@ -22,6 +22,7 @@ add_executable(${NAME}
 	ov2640.c
 	aps6404.c
 	main.c
+	pcf_rtc.c
 )
 
 pico_set_program_name(${NAME} "ov2640")
@@ -33,6 +34,11 @@ pico_enable_stdio_usb(${NAME} 1)
 pico_generate_pio_header(${NAME} ${CMAKE_CURRENT_LIST_DIR}/image.pio)
 pico_generate_pio_header(${NAME} ${CMAKE_CURRENT_LIST_DIR}/aps6404.pio)
 
+# Include required libraries
+# This assumes `pimoroni-pico` is stored alongside your project
+#include(common/pimoroni_i2c)
+#include(drivers/pcf85063a/pcf85063a)
+
 target_link_libraries(${NAME}
 	pico_stdlib
 	pico_multicore
@@ -40,6 +46,7 @@ target_link_libraries(${NAME}
 	hardware_i2c
 	hardware_pio
 	hardware_pwm
+	hardware_rtc
 	pico_cyw43_arch_lwip_poll
 )
 

@@ -5,6 +5,7 @@
 #include "pico/multicore.h"
 #include "ov2640.h"
 #include "aps6404.h"
+#include "pcf_rtc.h"
 
 #include "pico/cyw43_arch.h"
 #include "secrets.h"
@@ -15,6 +16,8 @@
 const int PIN_VSYS_EN = 2;
 const int PIN_LED = 6;
 const int PIN_POKE = 7;
+
+const int PIN_EXT_INT = 3;
 
 const int PIN_CAM_SIOC = 5; // I2C0 SCL
 const int PIN_CAM_SIOD = 4; // I2C0 SDA
@@ -30,6 +33,7 @@ const uint8_t CMD_CAPTURE = 0xCC;
 _Alignas(4096) uint8_t image_buf[8192];
 //_Alignas(4) uint8_t image_buf[352*288*2];
 
+struct pcf_rtc_config pcf_config;
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
@@ -246,6 +250,29 @@ int main() {
 	gpio_put(PIN_VSYS_EN, 1);
 
 	stdio_init_all();
+
+	//sleep_ms(5000);
+
+	printf("Init RTC\n");
+	pcf_config.pin_sda = PIN_CAM_SIOD;
+	pcf_config.pin_scl = PIN_CAM_SIOC;
+	pcf_config.pin_interrupt = PIN_EXT_INT;
+
+	pcf_rtc_init(&pcf_config);
+
+	datetime_t t;
+	pcf_rtc_get_time(&t);
+	printf("RTC time: %d/%d/%d %d:%d:%d\n", t.day, t.month, t.year, t.hour, t.min, t.sec);
+
+#if 0
+	bool alarm = pcf_rtc_get_alarm();
+	pcf_rtc_set_alarm(5, -1, -1);
+	while (!alarm) {
+		sleep_ms(1000);
+		alarm = pcf_rtc_get_alarm();
+		printf("RTC alarm: %s\n", alarm? "Y" : "N");
+	}
+#endif
 
 	multicore_launch_core1(core1_entry);
 

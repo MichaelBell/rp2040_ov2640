@@ -30,14 +30,14 @@ const uint8_t CMD_REG_WRITE = 0xAA;
 const uint8_t CMD_REG_READ = 0xBB;
 const uint8_t CMD_CAPTURE = 0xCC;
 
-_Alignas(4096) uint8_t image_buf[8192];
+_Alignas(8192) uint8_t image_buf[8192];
 //_Alignas(4) uint8_t image_buf[352*288*2];
 
 struct pcf_rtc_config pcf_config;
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
-#define TEST_TCP_SERVER_IP "192.168.0.88"
+#define TEST_TCP_SERVER_IP "172.20.10.2"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 1024
@@ -189,7 +189,7 @@ void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_confi
         channel_config_set_dreq(&c, pio_get_dreq(ov_config->pio, ov_config->pio_sm, false));
         channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
         channel_config_set_bswap(&c, true);
-	channel_config_set_ring(&c, true, 12);  // Ring of 4096 bytes
+	channel_config_set_ring(&c, true, 13);  // Ring of 8192 bytes
 
         dma_channel_configure(
                 ov_config->dma_channel, &c,
@@ -206,7 +206,7 @@ void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_confi
         channel_config_set_write_increment(&c, false);
         channel_config_set_dreq(&c, pio_get_dreq(ram_config->pio, ram_config->pio_sm, true));
         channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
-	channel_config_set_ring(&c, false, 12);  // Ring of 4096 bytes
+	channel_config_set_ring(&c, false, 13);  // Ring of 8192 bytes
 
         dma_channel_configure(
                 ram_config->dma_channel, &c,
@@ -315,7 +315,8 @@ void core1_entry() {
 	ov_config.dma_channel = dma_claim_unused_channel(true);
 	ov_config.image_buf = image_buf;
 	//ov_config.image_buf_size = 352*288*2;
-	ov_config.image_buf_size = 800*600*2;
+	//ov_config.image_buf_size = 800*600*2;
+	ov_config.image_buf_size = 1600*1200*2;
 
 	ov2640_init(&ov_config);
 

@@ -8,7 +8,7 @@ static const uint8_t ov2640_svga[][2] = {
 	{0x2e, 0xdf},  /* Reserved                              */
 	{0xff, 0x01},  /* Device control register list Table 13 */
 	{0x3c, 0x32},  /* Reserved                              */
-	{0x11, 0x00},  /* Clock Rate Control                    */
+	{0x11, 0x03},  /* Clock Rate Control                    */
 	{0x09, 0x02},  /* Common control 2                      */
 	{0x04, 0xA8},  /* Mirror                                */
 	{0x13, 0xe5},  /* Common control 8                      */
@@ -43,7 +43,7 @@ static const uint8_t ov2640_svga[][2] = {
 	{0x3d, 0x34},  /* Reserved                              */
 	{0x5a, 0x57},  /* Reserved                              */
 	{0x12, 0x00},  /* Common control 7                      */
-	{0x11, 0x00},  /* Clock Rate Control                   2*/
+	{0x11, 0x03},  /* Clock Rate Control                   2*/
 	{0x17, 0x11},  /* Horiz window start MSB 8bits          */
 	{0x18, 0x75},  /* Horiz window end MSB 8bits            */
 	{0x19, 0x01},  /* Vert window line start MSB 8bits      */
@@ -197,6 +197,7 @@ static const uint8_t ov2640_svga[][2] = {
 	{0xc1, 0x96},
 	{0x8c, 0x00},  
 	{0x86, 0x3d}, // CTRL2: DCW | SDE | UV_ADJ | UV_AVG
+#if 0
 	{0x50, 0x89}, // CTRLI: LP_DP, VDIV=1, HDIV=1
 	{0x51, 0x90}, // HSIZE: 400 * 4
 	{0x52, 0x2c}, // VSIZE: 300 * 4
@@ -208,6 +209,19 @@ static const uint8_t ov2640_svga[][2] = {
 	{0x5b, 0x96}, // OUTH: 150 * 4 = 600
 	{0x5c, 0x00},
 	{0xd3, 0x02}, // PCLK_DIV = 2
+#else
+	{0x50, 0x00}, // CTRLI: VDIV=0, HDIV=0
+	{0x51, 0x90}, // HSIZE: 400 * 4
+	{0x52, 0x2c}, // VSIZE: 300 * 4
+	{0x53, 0x00},
+	{0x54, 0x00},
+	{0x55, 0x88},
+	{0x57, 0x00},
+	{0x5a, 0x90}, // OUTW: 400 * 4 = 1600
+	{0x5b, 0x2c}, // OUTH: 300 * 4 = 1200
+	{0x5c, 0x05},
+	{0xd3, 0x80}, // PCLK_DIV = AUTO
+#endif
 	{0xe0, 0x00}
 };
 

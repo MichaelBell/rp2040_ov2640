@@ -6,7 +6,7 @@ import math
 image_count = 0
 
 def make_image_rgb565(raw):
-    img = Image.new('RGB', (800,600))
+    img = Image.new('RGB', (1600,1200))
     width, height = img.size
     data = img.load()
 
@@ -30,7 +30,7 @@ def make_image_rgb565(raw):
     image_count += 1
 
 def make_image_yuv(raw):
-    img = Image.new('YCbCr', (800,600))
+    img = Image.new('YCbCr', (1600,1200))
     width, height = img.size
     data = img.load()
 

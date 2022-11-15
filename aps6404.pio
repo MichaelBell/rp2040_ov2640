@@ -39,20 +39,23 @@ rwt_lp:
   nop               side 0b10
   jmp x-- rwt_lp    side 0b00
 
-; Now wait 1.5 more clocks before we start reading due to latencies
+; Now wait 2 more clocks before we start reading due to latencies
 ; in the RP2040 outputs and inputs
   jmp y--, rd_next  side 0b10
 rd_next:
-  nop               side 0b00
-  jmp y--, rd_lp    side 0b10
+  set x, 2          side 0b00
+  jmp y--, rd_next2 side 0b10
+rd_next2:
+  jmp y--, rd_lp    side 0b00
 rd_lp:
-  in pins, 1        side 0b00
-  jmp y--, rd_lp    side 0b10
+  in pins, 1        side 0b10
+  jmp y--, rd_lp    side 0b00
 
-; Read the remaining 2 bits, but no more clocks so we don't read beyond
+; Read the remaining 3 bits, but no more clocks so we don't read beyond
 ; the requested length from the SRAM.
-  in pins, 1 [1]    side 0b01
+rd_rem:
   in pins, 1        side 0b01
+  jmp x--, rd_rem   side 0b01
 .wrap
 
 ; Write only program that writes a short (<32 bit) command, 
@@ -104,7 +107,6 @@ void aps6404_program_init(PIO pio, uint sm, uint offset, uint csn, uint mosi, ui
 	sm_config_set_out_pins(&c, mosi, 1);
 	sm_config_set_out_shift(&c, false, true, 32);
 	sm_config_set_sideset_pins(&c, csn);
-        hw_set_bits(&pio->input_sync_bypass, 1u << miso);
 
         pio_sm_init(pio, sm, offset, &c);
         pio_sm_set_enabled(pio, sm, true);

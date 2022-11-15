@@ -37,7 +37,7 @@ struct pcf_rtc_config pcf_config;
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
-#define TEST_TCP_SERVER_IP "172.20.10.2"
+#define TEST_TCP_SERVER_IP "192.168.1.248"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 1024
@@ -245,6 +245,9 @@ void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_confi
 void core1_entry();
 
 int main() {
+	// The PSRAM supports up to 84MHz, so 168MHz is the fastest we can go
+	set_sys_clock_khz(168000, true);
+
 	gpio_init(PIN_VSYS_EN);
 	gpio_set_dir(PIN_VSYS_EN, GPIO_OUT);
 	gpio_put(PIN_VSYS_EN, 1);

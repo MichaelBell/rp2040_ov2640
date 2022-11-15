@@ -37,7 +37,7 @@ struct pcf_rtc_config pcf_config;
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
-#define TEST_TCP_SERVER_IP "192.168.1.248"
+#define TEST_TCP_SERVER_IP "192.168.1.215"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 1024
@@ -267,15 +267,9 @@ int main() {
 	pcf_rtc_get_time(&t);
 	printf("RTC time: %d/%d/%d %d:%d:%d\n", t.day, t.month, t.year, t.hour, t.min, t.sec);
 
-#if 0
+	// Alarm once per minute
 	bool alarm = pcf_rtc_get_alarm();
-	pcf_rtc_set_alarm(5, -1, -1);
-	while (!alarm) {
-		sleep_ms(1000);
-		alarm = pcf_rtc_get_alarm();
-		printf("RTC alarm: %s\n", alarm? "Y" : "N");
-	}
-#endif
+	pcf_rtc_set_alarm(0, -1, -1);
 
 	multicore_launch_core1(core1_entry);
 
@@ -362,6 +356,7 @@ void core1_entry() {
 	if (!cli) return;
 
 	while (true) {
+#if 0
 		while (!gpio_get(PIN_POKE))
 		{
 			cyw43_arch_poll();
@@ -373,6 +368,14 @@ void core1_entry() {
 			cyw43_arch_poll();
 			sleep_ms(1);
 		}
+#else
+		while (!pcf_rtc_get_alarm())
+		{
+			cyw43_arch_poll();
+			sleep_ms(100);
+		}
+		pcf_rtc_clear_alarm();
+#endif
 
 		while (!cli->connected) {
 			if (!tcp_client_open(cli)) {
@@ -389,7 +392,7 @@ void core1_entry() {
 					tcp_result(cli, 2);
 				}
 			}
-			for (int i = 0; i < 1000; ++i)
+			for (int i = 0; i < 1000 && !cli->connected; ++i)
 			{
 				cyw43_arch_poll();
 				sleep_ms(1);
@@ -399,6 +402,7 @@ void core1_entry() {
 		capture_frame_to_sram(&ov_config, &ram_config);
 		printf("Frame captured\n");
 		cyw43_arch_poll();
+		absolute_time_t start_xfer_time = get_absolute_time();
 
 		uint32_t addr = 0;
 		int len_to_send = BUF_SIZE;
@@ -447,5 +451,9 @@ void core1_entry() {
 		}
 
 		tcp_result(cli, 0);
+		int64_t xfer_time = absolute_time_diff_us(start_xfer_time, get_absolute_time());
+		float xfer_rate = ov_config.image_buf_size * 976.5625f;
+		xfer_rate /= xfer_time;
+		printf("Image transferred at %.2fkB/s\n\n", xfer_rate);
 	}
 }

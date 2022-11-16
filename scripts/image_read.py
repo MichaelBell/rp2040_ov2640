@@ -72,10 +72,10 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             if len(self.data) == 0: break
             #print("{} wrote {} bytes".format(self.client_address[0], len(self.data)))
             self.image_data += self.data
-            try:
-                self.request.send(b"OK")
-            except ConnectionAbortedError:
-                pass
+            #try:
+            #    self.request.send(b"OK")
+            #except ConnectionAbortedError:
+            #    pass
             
     def finish(self):
         print("Writing image {}".format(image_count))

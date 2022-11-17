@@ -4,9 +4,12 @@ import struct
 import math
 
 image_count = 0
+image_width = 600
+image_height = 436
+image_bytes = image_width*image_height*2
 
 def make_image_rgb565(raw):
-    img = Image.new('RGB', (1600,1200))
+    img = Image.new('RGB', (image_width, image_height))
     width, height = img.size
     data = img.load()
 
@@ -30,7 +33,7 @@ def make_image_rgb565(raw):
     image_count += 1
 
 def make_image_yuv(raw):
-    img = Image.new('YCbCr', (1600,1200))
+    img = Image.new('YCbCr', (image_width, image_height))
     width, height = img.size
     data = img.load()
 
@@ -79,7 +82,9 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             
     def finish(self):
         print("Writing image {}".format(image_count))
-        make_image_yuv(self.image_data)
+        while len(self.image_data) > 0:
+            make_image_yuv(self.image_data[0:image_bytes])
+            self.image_data = self.image_data[image_bytes:]
 
 if __name__ == "__main__":
     HOST, PORT = "0.0.0.0", 4242

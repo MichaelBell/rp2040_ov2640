@@ -8,10 +8,11 @@
 static const uint8_t OV2640_ADDR = 0x60 >> 1;
 
 void ov2640_init(struct ov2640_config *config) {
-	// XCLK generation (~20.83 MHz)
+	// XCLK generation
 	gpio_set_function(config->pin_xclk, GPIO_FUNC_PWM);
 	uint slice_num = pwm_gpio_to_slice_num(config->pin_xclk);
-	// 12 cycles (0 to 11), 125 MHz / 12 = ~10.42 MHz wrap rate
+
+	// 12 cycles (0 to 11), 168 MHz / 12 = 14 MHz wrap rate
 	pwm_set_wrap(slice_num, 11);
 	pwm_set_gpio_level(config->pin_xclk, 6);
 	pwm_set_enabled(slice_num, true);
@@ -32,12 +33,14 @@ void ov2640_init(struct ov2640_config *config) {
 	sleep_ms(100);
 
 	// Initialise the camera itself over SCCB
-	ov2640_regs_write(config, ov2640_svga);
+	//ov2640_regs_write(config, ov2640_uxga);
+	ov2640_regs_write(config, ov2640_vid);
 	//ov2640_regs_write(config, ov2640_uxga_cif);
 
-	// Set RGB565 output mode
-	ov2640_reg_write(config, 0xff, 0x00);
-	ov2640_reg_write(config, 0xDA, 0x00);
+	// Set YUYV output mode
+	//ov2640_reg_write(config, 0xff, 0x00);
+	//ov2640_reg_write(config, 0xDA, 0x00);
+	//ov2640_reg_write(config, 0xe0, 0x00);
 
 	// Enable image RX PIO
 	uint offset = pio_add_program(config->pio, &image_program);

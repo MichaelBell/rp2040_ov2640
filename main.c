@@ -182,7 +182,7 @@ static TCP_CLIENT_T* tcp_client_init(void) {
     return state;
 }	
 
-void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_config* ram_config) {
+void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_config* ram_config, int start_addr) {
         dma_channel_config c = dma_channel_get_default_config(ov_config->dma_channel);
         channel_config_set_read_increment(&c, false);
         channel_config_set_write_increment(&c, true);
@@ -225,7 +225,7 @@ void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_confi
 
         dma_channel_start(ov_config->dma_channel);
 
-	uint32_t write_cmd_and_addr = 0x02000000u;
+	uint32_t write_cmd_and_addr = 0x02000000u + start_addr;
 	while (true) {
 		while (dma_hw->ch[ov_config->dma_channel].transfer_count > next_transfer_threshold);
 
@@ -313,7 +313,8 @@ void core1_entry() {
 	ov_config.image_buf = image_buf;
 	//ov_config.image_buf_size = 352*288*2;
 	//ov_config.image_buf_size = 800*600*2;
-	ov_config.image_buf_size = 1600*1200*2;
+	//ov_config.image_buf_size = 1600*1200*2;
+	ov_config.image_buf_size = 600*436*2;
 
 	ov2640_init(&ov_config);
 
@@ -356,7 +357,7 @@ void core1_entry() {
 	if (!cli) return;
 
 	while (true) {
-#if 0
+#if 1
 		while (!gpio_get(PIN_POKE))
 		{
 			cyw43_arch_poll();
@@ -399,61 +400,67 @@ void core1_entry() {
 			}
 		}
 
-		capture_frame_to_sram(&ov_config, &ram_config);
-		printf("Frame captured\n");
-		cyw43_arch_poll();
-		absolute_time_t start_xfer_time = get_absolute_time();
-
-		uint32_t addr = 0;
-		int len_to_send = BUF_SIZE;
-		aps6404_read(&ram_config, addr, (uint32_t*)ov_config.image_buf, BUF_SIZE / 4);
-		addr += BUF_SIZE;
-
-		cli->xfer_ptr = ov_config.image_buf;
-		cli->xfer_count = ov_config.image_buf_size;
-		cli->unack_len = 0;
-
-		while (cli->xfer_count > 0) {
-			cyw43_arch_poll();
-			if (cli->unack_len == 0 ||
-			    (cli->unack_len <= BUF_SIZE * 6 && !dma_channel_is_busy(ram_config.dma_channel)))
-			{
-				dma_channel_wait_for_finish_blocking(ram_config.dma_channel);
-
-				cli->unack_len += len_to_send;
-				cli->xfer_count -= len_to_send;
-				cyw43_arch_lwip_begin();
-				tcp_write(cli->tcp_pcb, cli->xfer_ptr, len_to_send, 0);
-				cyw43_arch_lwip_end();
-				cli->xfer_ptr += BUF_SIZE;
-				if (cli->xfer_ptr == ov_config.image_buf + BUF_SIZE * 8) {
-					cli->xfer_ptr = ov_config.image_buf;
-				}
-
-				len_to_send = cli->xfer_count;
-				if (len_to_send > BUF_SIZE) {
-				    len_to_send = BUF_SIZE;
-				}
-
-				if (len_to_send > 0) {
-					aps6404_read(&ram_config, addr, (uint32_t*)cli->xfer_ptr, len_to_send / 4);
-					addr += len_to_send;
-				}
-			}
-			else {
-				sleep_us(100);
-			}
-		}
-
-		while (cli->unack_len > 0) {
-			sleep_ms(1);
+		absolute_time_t start_capture_time = get_absolute_time();
+		for (int addr = 0; addr < (1 << 23); addr += 1 << 19) {
+			capture_frame_to_sram(&ov_config, &ram_config, addr);
 			cyw43_arch_poll();
 		}
+		int64_t capture_time = absolute_time_diff_us(start_capture_time, get_absolute_time());
+		printf("Frames captured in %lldus\n", capture_time);
 
+		for (uint32_t start_addr = 0; start_addr < (1 << 23); start_addr += 1 << 19) {
+			absolute_time_t start_xfer_time = get_absolute_time();
+			uint32_t addr = start_addr;
+			int len_to_send = BUF_SIZE;
+			aps6404_read(&ram_config, addr, (uint32_t*)ov_config.image_buf, BUF_SIZE / 4);
+			addr += BUF_SIZE;
+
+			cli->xfer_ptr = ov_config.image_buf;
+			cli->xfer_count = ov_config.image_buf_size;
+			cli->unack_len = 0;
+
+			while (cli->xfer_count > 0) {
+				cyw43_arch_poll();
+				if (cli->unack_len == 0 ||
+				    (cli->unack_len <= BUF_SIZE * 6 && !dma_channel_is_busy(ram_config.dma_channel)))
+				{
+					dma_channel_wait_for_finish_blocking(ram_config.dma_channel);
+
+					cli->unack_len += len_to_send;
+					cli->xfer_count -= len_to_send;
+					cyw43_arch_lwip_begin();
+					tcp_write(cli->tcp_pcb, cli->xfer_ptr, len_to_send, 0);
+					cyw43_arch_lwip_end();
+					cli->xfer_ptr += BUF_SIZE;
+					if (cli->xfer_ptr == ov_config.image_buf + BUF_SIZE * 8) {
+						cli->xfer_ptr = ov_config.image_buf;
+					}
+
+					len_to_send = cli->xfer_count;
+					if (len_to_send > BUF_SIZE) {
+					    len_to_send = BUF_SIZE;
+					}
+
+					if (len_to_send > 0) {
+						aps6404_read(&ram_config, addr, (uint32_t*)cli->xfer_ptr, len_to_send / 4);
+						addr += len_to_send;
+					}
+				}
+				else {
+					sleep_us(100);
+				}
+			}
+
+			while (cli->unack_len > 0) {
+				sleep_ms(1);
+				cyw43_arch_poll();
+			}
+
+			int64_t xfer_time = absolute_time_diff_us(start_xfer_time, get_absolute_time());
+			float xfer_rate = ov_config.image_buf_size * 976.5625f;
+			xfer_rate /= xfer_time;
+			printf("Image transferred at %.2fkB/s\n\n", xfer_rate);
+		}
 		tcp_result(cli, 0);
-		int64_t xfer_time = absolute_time_diff_us(start_xfer_time, get_absolute_time());
-		float xfer_rate = ov_config.image_buf_size * 976.5625f;
-		xfer_rate /= xfer_time;
-		printf("Image transferred at %.2fkB/s\n\n", xfer_rate);
 	}
 }

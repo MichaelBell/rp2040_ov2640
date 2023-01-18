@@ -19,11 +19,13 @@ void ov2640_init(struct ov2640_config *config) {
 	// SCCB I2C @ 100 kHz
 	gpio_set_function(config->pin_sioc, GPIO_FUNC_I2C);
 	gpio_set_function(config->pin_siod, GPIO_FUNC_I2C);
-	//i2c_init(config->sccb, 100 * 1000);
+	i2c_init(config->sccb, 100 * 1000);
 
 	// Initialise reset pin
 	gpio_init(config->pin_resetb);
 	gpio_set_dir(config->pin_resetb, GPIO_OUT);
+
+    gpio_init(config->pin_vsync);
 
 	// Reset camera, and give it some time to wake back up
 	gpio_put(config->pin_resetb, 0);

@@ -7,11 +7,17 @@
 #include "aps6404.h"
 #include "pcf_rtc.h"
 
+#define WIFI
+
+#ifdef WIFI
 #include "pico/cyw43_arch.h"
 #include "secrets.h"
 
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+#else
+#define cyw43_arch_poll()
+#endif
 
 const int PIN_VSYS_EN = 2;
 const int PIN_LED = 6;
@@ -21,10 +27,10 @@ const int PIN_EXT_INT = 3;
 
 const int PIN_CAM_SIOC = 5; // I2C0 SCL
 const int PIN_CAM_SIOD = 4; // I2C0 SDA
-const int PIN_CAM_RESETB = 9;
+const int PIN_CAM_RESETB = 8;
 const int PIN_CAM_XCLK = 0;
-const int PIN_CAM_VSYNC = 19;
-const int PIN_CAM_Y2_PIO_BASE = 10;
+const int PIN_CAM_VSYNC = 28;
+const int PIN_CAM_Y2_PIO_BASE = 9;
 
 const uint8_t CMD_REG_WRITE = 0xAA;
 const uint8_t CMD_REG_READ = 0xBB;
@@ -37,11 +43,12 @@ struct pcf_rtc_config pcf_config;
 struct ov2640_config ov_config;
 struct aps6404_config ram_config;
 
-#define TEST_TCP_SERVER_IP "192.168.1.215"
+#define TEST_TCP_SERVER_IP "192.168.0.88"
 #define TCP_PORT 4242
 #define DEBUG_printf printf
 #define BUF_SIZE 1024
 
+#ifdef WIFI
 typedef struct TCP_CLIENT_T_ {
     struct tcp_pcb *tcp_pcb;
     ip_addr_t remote_addr;
@@ -181,6 +188,7 @@ static TCP_CLIENT_T* tcp_client_init(void) {
     ip4addr_aton(TEST_TCP_SERVER_IP, &state->remote_addr);
     return state;
 }	
+#endif
 
 void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_config* ram_config) {
         dma_channel_config c = dma_channel_get_default_config(ov_config->dma_channel);
@@ -256,6 +264,7 @@ int main() {
 
 	//sleep_ms(5000);
 
+#if 0
 	printf("Init RTC\n");
 	pcf_config.pin_sda = PIN_CAM_SIOD;
 	pcf_config.pin_scl = PIN_CAM_SIOC;
@@ -270,6 +279,7 @@ int main() {
 	// Alarm once per minute
 	bool alarm = pcf_rtc_get_alarm();
 	pcf_rtc_set_alarm(0, -1, -1);
+#endif
 
 	multicore_launch_core1(core1_entry);
 
@@ -277,6 +287,7 @@ int main() {
 }
 
 void core1_entry() {
+#ifdef WIFI
 	if (cyw43_arch_init_with_country(CYW43_COUNTRY_UK)) {
 		printf("failed to initialise\n");
 		return;
@@ -289,12 +300,13 @@ void core1_entry() {
 		sleep_ms(1000);
 	}
 	printf("\n\nConnected!\n");
+#endif
 
 	gpio_init(PIN_LED);
 	gpio_set_dir(PIN_LED, GPIO_OUT);
 	gpio_put(PIN_LED, 1);
 	gpio_init(PIN_POKE);
-	gpio_pull_down(PIN_POKE);
+	gpio_pull_up(PIN_POKE);
 	gpio_set_dir(PIN_POKE, GPIO_IN);
 
 	ov_config.sccb = i2c0;
@@ -322,9 +334,9 @@ void core1_entry() {
 	uint8_t midl = ov2640_reg_read(&ov_config, 0x1D);
 	printf("MIDH = 0x%02x, MIDL = 0x%02x\n", midh, midl);
 
-	ram_config.pin_csn = 20;
-	ram_config.pin_mosi = 22;
-	ram_config.pin_miso = 26;
+	ram_config.pin_csn = 17;
+	ram_config.pin_mosi = 19;
+	ram_config.pin_miso = 20;
 
 	ram_config.pio = pio0;
 	ram_config.pio_sm = pio_claim_unused_sm(pio0, true);
@@ -350,14 +362,30 @@ void core1_entry() {
 		}
 	}
 
+#if 0
+    while (true) {
+        //bool vsync = gpio_get(0); // gpio_get(ov_config.pin_vsync);
+        bool vsync = gpio_get(ov_config.pin_vsync);
+        //bool hsync = gpio_get(1); // gpio_get(27);
+        bool hsync = gpio_get(27);
+        if (vsync && hsync) printf("*");
+        else if (!vsync && hsync) printf("|");
+        else if (vsync && !hsync) printf("x");
+        else printf(".");
+        sleep_ms(5);
+    }
+#endif
+
 	cyw43_arch_poll();
 
+#ifdef WIFI
 	TCP_CLIENT_T* cli = tcp_client_init();
 	if (!cli) return;
+#endif
 
 	while (true) {
-#if 0
-		while (!gpio_get(PIN_POKE))
+#if 1
+		while (gpio_get(PIN_POKE))
 		{
 			cyw43_arch_poll();
 			sleep_ms(1);
@@ -377,6 +405,7 @@ void core1_entry() {
 		pcf_rtc_clear_alarm();
 #endif
 
+#ifdef WIFI
 		while (!cli->connected) {
 			if (!tcp_client_open(cli)) {
 				tcp_result(cli, -1);
@@ -398,10 +427,14 @@ void core1_entry() {
 				sleep_ms(1);
 			}
 		}
+#endif
 
+		printf("Capture frame\n");
 		capture_frame_to_sram(&ov_config, &ram_config);
 		printf("Frame captured\n");
 		cyw43_arch_poll();
+
+#ifdef WIFI
 		absolute_time_t start_xfer_time = get_absolute_time();
 
 		uint32_t addr = 0;
@@ -455,5 +488,6 @@ void core1_entry() {
 		float xfer_rate = ov_config.image_buf_size * 976.5625f;
 		xfer_rate /= xfer_time;
 		printf("Image transferred at %.2fkB/s\n\n", xfer_rate);
+#endif
 	}
 }

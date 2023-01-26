@@ -6,10 +6,12 @@
 ;
 ; DMA is 32 bit.  Stream takes form:
 ; 1 bit cmd (1 = write, 0 = read)
-; 31 bits length of read/write in bits, minus 1, plus 32 for writes (length must be a multiple of 32)
-; 8 bits AP6404 cmd (0b = read, 02 = write)
+; 31 bits For read: length of read in bits, minus 1
+;         For write: length of write in nibbles, minus 1, plus 6 
+;         Original data length in bits must be a multiple of 32
+; 8 bits AP6404 cmd (0x0b = read, 0x38 = write)
 ; 24 bits address
-; For write, length * 32 bits data
+; For write, data
 
 .program sram
 .side_set 2
@@ -21,9 +23,16 @@ top:
   jmp !x, do_read   side 0b01
 
 ; Write command, followed by data
-wr_lp:
+  set x, 6          side 0b01
+wcmd_lp:
   out pins, 1       side 0b00
+  jmp x--, wcmd_lp  side 0b10
+  out pins, 1       side 0b00
+  set pindirs, 7    side 0b10
+wr_lp:
+  out pins, 4       side 0b00
   jmp y--, wr_lp    side 0b10
+  set pindirs, 0    side 0b00
   jmp top           side 0b01
 
 ; Read command
@@ -74,41 +83,47 @@ wr_lp:
 
 
 % c-sdk {
-void aps6404_reset_program_init(PIO pio, uint sm, uint offset, uint csn, uint mosi, uint miso) {
+void aps6404_reset_program_init(PIO pio, uint sm, uint offset, uint csn, uint mosi) {
+    uint miso = mosi + 1;
 	pio_gpio_init(pio, csn);
 	pio_gpio_init(pio, csn + 1);
 	pio_gpio_init(pio, mosi);
-        pio_sm_set_consecutive_pindirs(pio, sm, csn, 2, true);
-        pio_sm_set_consecutive_pindirs(pio, sm, mosi, 1, true);
-        pio_sm_set_consecutive_pindirs(pio, sm, miso, 1, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, csn, 2, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, mosi, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, miso, 1, false);
 
-        pio_sm_config c = sram_reset_program_get_default_config(offset);
-        sm_config_set_in_pins(&c, miso);
-        sm_config_set_in_shift(&c, false, true, 32);
+    pio_sm_config c = sram_reset_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, miso);
+    sm_config_set_in_shift(&c, false, true, 32);
 	sm_config_set_out_pins(&c, mosi, 1);
 	sm_config_set_out_shift(&c, false, true, 32);
 	sm_config_set_sideset_pins(&c, csn);
 	sm_config_set_clkdiv(&c, 4.f);
 
-        pio_sm_init(pio, sm, offset, &c);
-        pio_sm_set_enabled(pio, sm, true);
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
 }
-void aps6404_program_init(PIO pio, uint sm, uint offset, uint csn, uint mosi, uint miso) {
+void aps6404_program_init(PIO pio, uint sm, uint offset, uint csn, uint mosi) {
+    uint miso = mosi + 1;
 	pio_gpio_init(pio, csn);
 	pio_gpio_init(pio, csn + 1);
 	pio_gpio_init(pio, mosi);
-        pio_sm_set_consecutive_pindirs(pio, sm, csn, 2, true);
-        pio_sm_set_consecutive_pindirs(pio, sm, mosi, 1, true);
-        pio_sm_set_consecutive_pindirs(pio, sm, miso, 1, false);
+	pio_gpio_init(pio, mosi + 1);
+	pio_gpio_init(pio, mosi + 2);
+	pio_gpio_init(pio, mosi + 3);
+    pio_sm_set_consecutive_pindirs(pio, sm, csn, 2, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, mosi, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, miso, 3, false);
 
-        pio_sm_config c = sram_program_get_default_config(offset);
-        sm_config_set_in_pins(&c, miso);
-        sm_config_set_in_shift(&c, false, true, 32);
-	sm_config_set_out_pins(&c, mosi, 1);
+    pio_sm_config c = sram_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, miso);
+    sm_config_set_in_shift(&c, false, true, 32);
+	sm_config_set_out_pins(&c, mosi, 4);
 	sm_config_set_out_shift(&c, false, true, 32);
+    sm_config_set_set_pins(&c, miso, 3);
 	sm_config_set_sideset_pins(&c, csn);
 
-        pio_sm_init(pio, sm, offset, &c);
-        pio_sm_set_enabled(pio, sm, true);
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
 }
 %}

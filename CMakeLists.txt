@@ -24,6 +24,7 @@ add_executable(${NAME}
 	aps6404.c
 	main.c
 	pcf_rtc.c
+    sdcard.c
 )
 
 pico_set_program_name(${NAME} "ov2640")
@@ -48,6 +49,7 @@ target_link_libraries(${NAME}
 	hardware_pio
 	hardware_pwm
 	hardware_rtc
+    hardware_spi
     pico_cyw43_arch_lwip_poll
 )
 

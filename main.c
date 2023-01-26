@@ -19,6 +19,8 @@
 #define cyw43_arch_poll()
 #endif
 
+int set_sd_idle();
+
 const int PIN_VSYS_EN = 2;
 const int PIN_LED = 6;
 const int PIN_POKE = 7;
@@ -233,11 +235,11 @@ void capture_frame_to_sram(struct ov2640_config* ov_config, struct aps6404_confi
 
         dma_channel_start(ov_config->dma_channel);
 
-	uint32_t write_cmd_and_addr = 0x02000000u;
+	uint32_t write_cmd_and_addr = 0x38000000u;
 	while (true) {
 		while (dma_hw->ch[ov_config->dma_channel].transfer_count > next_transfer_threshold);
 
-		pio_sm_put_blocking(ram_config->pio, ram_config->pio_sm, 0x8000201fu);
+		pio_sm_put_blocking(ram_config->pio, ram_config->pio_sm, 0x80000805u);
 		pio_sm_put_blocking(ram_config->pio, ram_config->pio_sm, write_cmd_and_addr);
 		dma_channel_start(ram_config->dma_channel);
 		write_cmd_and_addr += bytes_per_transfer;
@@ -254,7 +256,8 @@ void core1_entry();
 
 int main() {
 	// The PSRAM supports up to 84MHz, so 168MHz is the fastest we can go
-	set_sys_clock_khz(168000, true);
+    // With an SD card inserted, I'm seeing read errors at 168MHz, so leave at 125MHz for now.
+	//set_sys_clock_khz(168000, true);
 
 	gpio_init(PIN_VSYS_EN);
 	gpio_set_dir(PIN_VSYS_EN, GPIO_OUT);
@@ -262,7 +265,9 @@ int main() {
 
 	stdio_init_all();
 
-	//sleep_ms(5000);
+#ifndef WIFI
+	sleep_ms(5000);
+#endif
 
 #if 0
 	printf("Init RTC\n");
@@ -295,12 +300,14 @@ void core1_entry() {
 
 	cyw43_arch_enable_sta_mode();
 
-	while (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
+	while (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 20000)) {
 		printf("failed to connect\n");
 		sleep_ms(1000);
 	}
 	printf("\n\nConnected!\n");
 #endif
+
+    set_sd_idle();
 
 	gpio_init(PIN_LED);
 	gpio_set_dir(PIN_LED, GPIO_OUT);
@@ -334,6 +341,10 @@ void core1_entry() {
 	uint8_t midl = ov2640_reg_read(&ov_config, 0x1D);
 	printf("MIDH = 0x%02x, MIDL = 0x%02x\n", midh, midl);
 
+    gpio_init(26);
+    gpio_put(26, 1);
+    gpio_set_dir(26, GPIO_OUT);
+
 	ram_config.pin_csn = 17;
 	ram_config.pin_mosi = 19;
 	ram_config.pin_miso = 20;
@@ -349,11 +360,12 @@ void core1_entry() {
 	aps6404_init(&ram_config);
 
 	uint32_t data[16];
-	for (int i = 0; i < 16; ++i) {
-		data[i] = 0x12345670 + i;
+	for (uint32_t i = 0; i < 16; ++i) {
+		data[i] = 0x12345670u + i * 0x10101010u;
 	}
 	aps6404_write(&ram_config, 0, data, 16);
 
+    for (int j = 0; j < 10; ++j)
 	for (int i = 0; i < 16; ++i) {
 		uint32_t read_data = 1;
 		aps6404_read_blocking(&ram_config, i * 4, &read_data, 1);
@@ -361,6 +373,7 @@ void core1_entry() {
 			printf("RAM test failed: Wrote %x, read back %x\n", data[i], read_data);
 		}
 	}
+    printf("RAM test complete\n");
 
 #if 0
     while (true) {

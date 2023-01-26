@@ -3,11 +3,13 @@
 #include "aps6404.pio.h"
 
 void aps6404_init(struct aps6404_config* config) {
+    assert(config->pin_miso == config->pin_mosi + 1);
+
 	gpio_init(config->pin_miso);
 	gpio_disable_pulls(config->pin_miso);
 
 	uint offset = pio_add_program(config->pio, &sram_reset_program);
-	aps6404_reset_program_init(config->pio, config->pio_sm, offset, config->pin_csn, config->pin_mosi, config->pin_miso);
+	aps6404_reset_program_init(config->pio, config->pio_sm, offset, config->pin_csn, config->pin_mosi);
 
 	sleep_us(200);
 	pio_sm_put_blocking(config->pio, config->pio_sm, 0x00000007u);
@@ -21,7 +23,7 @@ void aps6404_init(struct aps6404_config* config) {
 
 	offset = pio_add_program(config->pio, &sram_program);
 	//printf("SRAM program loaded to PIO at offset %d\n", offset);
-	aps6404_program_init(config->pio, config->pio_sm, offset, config->pin_csn, config->pin_mosi, config->pin_miso);
+	aps6404_program_init(config->pio, config->pio_sm, offset, config->pin_csn, config->pin_mosi);
 
 }
 
@@ -42,8 +44,8 @@ void aps6404_write(struct aps6404_config* config, uint32_t addr, uint32_t* data,
 		false
 	);
 
-	pio_sm_put_blocking(config->pio, config->pio_sm, 0x80000000u | (((len_in_words + 1) * 32) - 1));
-	pio_sm_put_blocking(config->pio, config->pio_sm, 0x02000000u | addr);
+	pio_sm_put_blocking(config->pio, config->pio_sm, 0x80000000u | ((len_in_words * 8) - 1 + 6));
+	pio_sm_put_blocking(config->pio, config->pio_sm, 0x38000000u | addr);
 
 	dma_channel_start(config->dma_channel);
 }

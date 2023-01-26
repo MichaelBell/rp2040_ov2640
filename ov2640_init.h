@@ -8,7 +8,7 @@ static const uint8_t ov2640_svga[][2] = {
 	{0x2e, 0xdf},  /* Reserved                              */
 	{0xff, 0x01},  /* Device control register list Table 13 */
 	{0x3c, 0x32},  /* Reserved                              */
-	{0x11, 0x03},  /* Clock Rate Control                    */
+	{0x11, 0x01},  /* Clock Rate Control                    */
 	{0x09, 0x02},  /* Common control 2                      */
 	{0x04, 0xA8},  /* Mirror                                */
 	{0x13, 0xe5},  /* Common control 8                      */
@@ -43,7 +43,7 @@ static const uint8_t ov2640_svga[][2] = {
 	{0x3d, 0x34},  /* Reserved                              */
 	{0x5a, 0x57},  /* Reserved                              */
 	{0x12, 0x00},  /* Common control 7                      */
-	{0x11, 0x03},  /* Clock Rate Control                   2*/
+	{0x11, 0x01},  /* Clock Rate Control                   2*/
 	{0x17, 0x11},  /* Horiz window start MSB 8bits          */
 	{0x18, 0x75},  /* Horiz window end MSB 8bits            */
 	{0x19, 0x01},  /* Vert window line start MSB 8bits      */

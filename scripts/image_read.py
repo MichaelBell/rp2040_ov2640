@@ -14,7 +14,7 @@ def make_image_rgb565(raw):
         for y in range(height):
             for x in range(width):
                 idx = y * width + x
-                v = struct.unpack('>H', raw[2*idx:2*(idx+1)])[0]
+                v = struct.unpack('<H', raw[2*idx:2*(idx+1)])[0]
 
                 r, g, b = v >> (5 + 6), (v >> 5) & 0b111111, v & 0b11111 
 
@@ -38,7 +38,7 @@ def make_image_yuv(raw):
         for y in range(height):
             for x in range(width//2):
                 idx = y * width//2 + x
-                y0 = raw[4*idx]
+                y0 = raw[4*idx + 0]
                 u = raw[4*idx + 1]
                 y1 = raw[4*idx + 2]
                 v = raw[4*idx + 3]
@@ -79,7 +79,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             
     def finish(self):
         print("Writing image {}".format(image_count))
-        make_image_yuv(self.image_data)
+        make_image_rgb565(self.image_data)
 
 if __name__ == "__main__":
     HOST, PORT = "0.0.0.0", 4242
